@@ -11,6 +11,13 @@
 注意: Windows CMD可能不支持部分emoji字符
 """
 
+# 设置默认编码为UTF-8
+import sys
+if sys.platform == 'win32':
+    # Windows系统下设置默认编码为UTF-8
+    import os
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -237,8 +244,11 @@ class StockSelector:
             if len(kline_data) < 30:
                 return None
             
-            # 转换为DataFrame
-            df = pd.DataFrame(kline_data, columns=['日期', '开盘', '收盘', '最低', '最高', '成交量'])
+            # 处理分红日可能出现的额外列（分红信息）
+            kline_data = [row[:6] for row in kline_data]
+            
+            # 转换为DataFrame - 修复列名顺序（最高和最低位置）
+            df = pd.DataFrame(kline_data, columns=['日期', '开盘', '收盘', '最高', '最低', '成交量'])
             df['开盘'] = df['开盘'].astype(float)
             df['收盘'] = df['收盘'].astype(float)
             df['最低'] = df['最低'].astype(float)
@@ -495,7 +505,9 @@ class StockSelector:
             symbol = f"{prefix}{stock_code}"
             
             url = f'http://hq.sinajs.cn/list={symbol}'
-            response = self.request_manager.session.get(url, timeout=10)
+            # 新浪API需要Referer头，否则返回Forbidden
+            headers = {'Referer': 'https://finance.sina.com.cn/stock/'}
+            response = self.request_manager.session.get(url, timeout=10, headers=headers)
             response.encoding = 'gbk'
             
             data = response.text
@@ -511,6 +523,11 @@ class StockSelector:
             if len(fields) < 33:
                 return None
             
+            # 新浪API(hq.sinajs.cn)字段说明：
+            # [0]名称 [1]今开 [2]昨收 [3]最新 [4]最高 [5]最低
+            # [6]买一 [7]卖一 [8]成交量 [9]成交额 [10-29]五档买卖盘
+            # [30]日期 [31]时间 [32]状态
+            # 注意：此API不提供换手率、市盈率、市值等数据
             stock_info = {
                 '代码': stock_code,
                 '名称': fields[0],
@@ -523,12 +540,12 @@ class StockSelector:
                 '成交额': float(fields[9]),
                 '涨跌幅': (float(fields[3]) - float(fields[2])) / float(fields[2]) * 100 if float(fields[2]) > 0 else 0,
                 '涨跌额': float(fields[3]) - float(fields[2]),
-                '换手率': float(fields[31]) if len(fields) > 31 else 0,
-                '市盈率-动态': float(fields[39]) if len(fields) > 39 else 0,
-                '市净率': float(fields[46]) if len(fields) > 46 else 0,
-                '总市值': float(fields[44]) * 10000 if len(fields) > 44 else 0,
-                '流通市值': float(fields[45]) * 10000 if len(fields) > 45 else 0,
-                '量比': 0
+                '换手率': 0,  # 新浪此API不提供
+                '市盈率-动态': 0,  # 新浪此API不提供
+                '市净率': 0,  # 新浪此API不提供
+                '总市值': 0,  # 新浪此API不提供
+                '流通市值': 0,  # 新浪此API不提供
+                '量比': 0  # 新浪此API不提供
             }
             
             return stock_info
